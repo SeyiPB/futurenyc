@@ -82,6 +82,7 @@ export default async function DashboardPage({
 
         <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
           <AttendanceGrid
+            key={selectedDay.id}
             students={students || []}
             attendance={attendance || []}
             dayId={selectedDay.id}
