@@ -35,22 +35,32 @@ export function Play() {
     e.preventDefault();
     setError("");
     setBusy(true);
-    const res = await joinSession(code, pin);
-    setBusy(false);
-    if (res.ok) {
-      setDisplayName(res.displayName);
-      setJoined(true);
-    } else {
-      setError(res.error || "Could not join");
+    try {
+      const res = await joinSession(code, pin);
+      if (res.ok) {
+        setDisplayName(res.displayName);
+        setJoined(true);
+      } else {
+        setError(res.error || "Could not join");
+      }
+    } catch {
+      setError("Something went wrong joining. Please try again.");
+    } finally {
+      setBusy(false);
     }
   }
 
   async function answer(optionId: string, questionId: string) {
     setSubmitting(true);
-    const res = await submitAnswer(code, pin, questionId, optionId);
-    setSubmitting(false);
-    if (!res.ok) setError(res.error || "Could not submit");
-    refresh();
+    try {
+      const res = await submitAnswer(code, pin, questionId, optionId);
+      if (!res.ok) setError(res.error || "Could not submit");
+    } catch {
+      setError("Something went wrong submitting your answer.");
+    } finally {
+      setSubmitting(false);
+      refresh();
+    }
   }
 
   // ---- Join screen ----
