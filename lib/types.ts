@@ -7,6 +7,7 @@ export interface Student {
   name: string;
   nickname: string | null;
   cohort_year: number;
+  pin: string | null;
   created_at: string;
 }
 

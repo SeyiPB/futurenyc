@@ -395,6 +395,7 @@ export function StudentRoster({
             <tr>
               <th className="px-6 py-3.5">Name</th>
               <th className="px-6 py-3.5">Nickname</th>
+              <th className="px-6 py-3.5">Quiz PIN</th>
               <th className="px-6 py-3.5">Cohort</th>
               <th className="px-6 py-3.5">Attendance</th>
               <th className="px-6 py-3.5">Total Points</th>
@@ -404,7 +405,7 @@ export function StudentRoster({
           <tbody className="divide-y divide-slate-100">
             {filteredStudents.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-slate-400">
+                <td colSpan={7} className="px-6 py-10 text-center text-slate-400">
                   No students found matching filters.
                 </td>
               </tr>
@@ -437,6 +438,15 @@ export function StudentRoster({
                       {student.nickname ? (
                         <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
                           {student.nickname}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      {student.pin ? (
+                        <span className="rounded bg-navy/5 px-2 py-1 font-mono text-sm font-bold tracking-widest text-navy">
+                          {student.pin}
                         </span>
                       ) : (
                         <span className="text-slate-400">—</span>

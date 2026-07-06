@@ -13,6 +13,24 @@ async function requireUser() {
   return { supabase, user };
 }
 
+// Generate `count` unique 4-digit PINs not already used by any student.
+async function generateUniquePins(
+  supabase: ReturnType<typeof createClient>,
+  count: number,
+): Promise<string[]> {
+  const { data } = await supabase.from("students").select("pin");
+  const used = new Set<string>((data || []).map((s: { pin: string | null }) => s.pin).filter(Boolean) as string[]);
+  const pins: string[] = [];
+  while (pins.length < count) {
+    const p = String(Math.floor(1000 + Math.random() * 9000));
+    if (!used.has(p)) {
+      used.add(p);
+      pins.push(p);
+    }
+  }
+  return pins;
+}
+
 export async function addStudent(
   name: string,
   nickname?: string,
@@ -24,11 +42,13 @@ export async function addStudent(
   if (!cleanName) return { ok: false, error: "Name is required" };
 
   const finalNickname = nickname?.trim() || cleanName.split(/\s+/)[0];
+  const [pin] = await generateUniquePins(supabase, 1);
 
   const { error } = await supabase.from("students").insert({
     name: cleanName,
     nickname: finalNickname || null,
     cohort_year: cohortYear || 2026,
+    pin,
   });
 
   if (error) return { ok: false, error: error.message };
@@ -113,7 +133,12 @@ export async function bulkImportStudents(
     if (deleteErr) return { ok: false, error: `Failed to clear existing roster: ${deleteErr.message}` };
   }
 
-  const { error: insertErr } = await supabase.from("students").insert(sanitized);
+  // Assign a unique PIN to each imported student (after any replace-delete so
+  // the uniqueness check reflects the post-delete roster).
+  const pins = await generateUniquePins(supabase, sanitized.length);
+  const withPins = sanitized.map((s, i) => ({ ...s, pin: pins[i] }));
+
+  const { error: insertErr } = await supabase.from("students").insert(withPins);
 
   if (insertErr) return { ok: false, error: insertErr.message };
 
