@@ -9,6 +9,7 @@ import {
   bulkImportStudents,
 } from "./actions";
 import type { Student } from "@/lib/types";
+import { GENDER_OPTIONS } from "@/lib/types";
 
 interface StudentRosterProps {
   initialStudents: Student[];
@@ -38,6 +39,7 @@ export function StudentRoster({
   const [formName, setFormName] = useState("");
   const [formNickname, setFormNickname] = useState("");
   const [formCohortYear, setFormCohortYear] = useState(2026);
+  const [formGender, setFormGender] = useState("");
   const [formError, setFormError] = useState("");
 
   // CSV Import States
@@ -119,6 +121,7 @@ export function StudentRoster({
     setFormName("");
     setFormNickname("");
     setFormCohortYear(2026);
+    setFormGender("");
     setFormError("");
     setShowAddModal(true);
   }
@@ -128,6 +131,7 @@ export function StudentRoster({
     setFormName(student.name);
     setFormNickname(student.nickname || "");
     setFormCohortYear(student.cohort_year);
+    setFormGender(student.gender || "");
     setFormError("");
   }
 
@@ -139,7 +143,7 @@ export function StudentRoster({
       return;
     }
     startTransition(async () => {
-      const res = await addStudent(formName, formNickname, formCohortYear);
+      const res = await addStudent(formName, formNickname, formCohortYear, formGender);
       if (res.ok) {
         // Refresh local states will trigger because of page revalidation,
         // but for immediate responsive feedback we can let Next.js refresh.
@@ -163,6 +167,7 @@ export function StudentRoster({
         formName,
         formNickname,
         formCohortYear,
+        formGender,
       );
       if (res.ok) {
         window.location.reload();
@@ -402,6 +407,7 @@ export function StudentRoster({
               <th className="px-6 py-3.5">Name</th>
               <th className="px-6 py-3.5">Nickname</th>
               <th className="px-6 py-3.5">Quiz PIN</th>
+              <th className="px-6 py-3.5">Gender</th>
               <th className="px-6 py-3.5">Cohort</th>
               <th className="px-6 py-3.5">Attendance</th>
               <th className="px-6 py-3.5">Total Points</th>
@@ -411,7 +417,7 @@ export function StudentRoster({
           <tbody className="divide-y divide-slate-100">
             {filteredStudents.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-6 py-10 text-center text-slate-400">
+                <td colSpan={8} className="px-6 py-10 text-center text-slate-400">
                   No students found matching filters.
                 </td>
               </tr>
@@ -457,6 +463,11 @@ export function StudentRoster({
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-600">
+                      {student.gender
+                        ? GENDER_OPTIONS.find((g) => g.value === student.gender)?.label
+                        : <span className="text-slate-400">—</span>}
                     </td>
                     <td className="px-6 py-4 font-medium text-slate-500">
                       {student.cohort_year}
@@ -559,6 +570,24 @@ export function StudentRoster({
                   placeholder="2026"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+                  Gender (optional)
+                </label>
+                <select
+                  value={formGender}
+                  onChange={(e) => setFormGender(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                >
+                  <option value="">—</option>
+                  {GENDER_OPTIONS.map((g) => (
+                    <option key={g.value} value={g.value}>
+                      {g.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {formError && (

@@ -2,11 +2,22 @@
 
 export type AttendanceStatus = "present" | "absent" | "late" | "excused";
 
+export type Gender = "male" | "female" | "non-binary" | "other" | "prefer_not_to_say";
+
+export const GENDER_OPTIONS: { value: Gender; label: string }[] = [
+  { value: "male", label: "Male" },
+  { value: "female", label: "Female" },
+  { value: "non-binary", label: "Non-binary" },
+  { value: "other", label: "Other" },
+  { value: "prefer_not_to_say", label: "Prefer not to say" },
+];
+
 export interface Student {
   id: string;
   name: string;
   nickname: string | null;
   cohort_year: number;
+  gender: Gender | null;
   pin: string | null;
   created_at: string;
 }

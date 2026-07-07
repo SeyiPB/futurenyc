@@ -35,6 +35,7 @@ export async function addStudent(
   name: string,
   nickname?: string,
   cohortYear?: number,
+  gender?: string,
 ) {
   const { supabase } = await requireUser();
 
@@ -48,6 +49,7 @@ export async function addStudent(
     name: cleanName,
     nickname: finalNickname || null,
     cohort_year: cohortYear || 2026,
+    gender: gender || null,
     pin,
   });
 
@@ -63,6 +65,7 @@ export async function updateStudent(
   name: string,
   nickname?: string,
   cohortYear?: number,
+  gender?: string,
 ) {
   const { supabase } = await requireUser();
 
@@ -77,6 +80,7 @@ export async function updateStudent(
       name: cleanName,
       nickname: finalNickname || null,
       cohort_year: cohortYear || 2026,
+      gender: gender || null,
     })
     .eq("id", id);
 
