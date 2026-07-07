@@ -1,6 +1,8 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { resolveCurrentDay } from "./program";
+import type { ProgramDay } from "./types";
 
 // Compute a student's participation streak ending at `dayNumber`:
 // the number of consecutive program days (…, dayNumber-1, dayNumber) on which
@@ -56,15 +58,19 @@ export async function awardQuizPointsForSession(
     .single();
   if (!quiz) return { ok: false, error: "Quiz not found" };
 
-  const dayId = quiz.day_id as string | null;
-
-  // Day-number lookup for streaks.
+  // Program days (with dates) for streaks + resolving the played day.
   const { data: days } = await supabase
     .from("program_days")
-    .select("id, day_number");
+    .select("id, day_number, date, week_number, title, theme");
   const dayNumberById = new Map<string, number>(
     (days || []).map((d: { id: string; day_number: number }) => [d.id, d.day_number]),
   );
+
+  // Award points to the day the quiz is actually PLAYED (today), not the quiz's
+  // curriculum day — so hosting the "Day 1 Review" on Day 2 credits Day 2.
+  // Falls back to the quiz's own day if today isn't a program day.
+  const today = resolveCurrentDay((days || []) as ProgramDay[]);
+  const dayId = (today?.id ?? (quiz.day_id as string | null)) as string | null;
   const thisDayNumber = dayId ? dayNumberById.get(dayId) ?? 0 : 0;
 
   // Quiz performance category for the leaderboard award.
