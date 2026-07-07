@@ -13,6 +13,18 @@ async function requireUser() {
   return { supabase, user };
 }
 
+// Toggle a quiz's completion status (Done / Upcoming).
+export async function setQuizStatus(quizId: string, status: "upcoming" | "done") {
+  const { supabase } = await requireUser();
+  const { error } = await supabase
+    .from("quizzes")
+    .update({ status })
+    .eq("id", quizId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/quizzes");
+  return { ok: true };
+}
+
 function genJoinCode() {
   // Unambiguous chars (no 0/O, 1/I) for projector readability.
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";

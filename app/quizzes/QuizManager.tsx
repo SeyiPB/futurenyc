@@ -9,6 +9,7 @@ import {
   getHostState,
   nextQuestion,
   revealCurrent,
+  setQuizStatus,
   startSession,
 } from "./actions";
 import type { ProgramDay, Quiz } from "@/lib/types";
@@ -44,6 +45,15 @@ export function QuizManager({ quizzes }: { quizzes: QuizRow[] }) {
     }
   }
 
+  async function toggleStatus(row: QuizRow) {
+    setBusy(true);
+    const next = row.quiz.status === "done" ? "upcoming" : "done";
+    const res = await setQuizStatus(row.quiz.id, next);
+    setBusy(false);
+    if (res.ok) router.refresh();
+    else alert(res.error || "Could not update status");
+  }
+
   function closeHost() {
     setHostSessionId(null);
     router.refresh();
@@ -76,9 +86,20 @@ export function QuizManager({ quizzes }: { quizzes: QuizRow[] }) {
             className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
           >
             <div>
-              <p className="font-semibold text-navy">
-                {row.day ? `Day ${row.day.day_number}: ` : ""}
-                {row.quiz.title}
+              <p className="flex items-center gap-2 font-semibold text-navy">
+                <span>
+                  {row.day ? `Day ${row.day.day_number}: ` : ""}
+                  {row.quiz.title}
+                </span>
+                {row.quiz.status === "done" ? (
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                    ✓ Done
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">
+                    Upcoming
+                  </span>
+                )}
               </p>
               <p className="text-xs text-slate-500">
                 {row.questionCount} question{row.questionCount === 1 ? "" : "s"} ·{" "}
@@ -90,13 +111,22 @@ export function QuizManager({ quizzes }: { quizzes: QuizRow[] }) {
                 )}
               </p>
             </div>
-            <button
-              onClick={() => host(row)}
-              disabled={busy}
-              className="rounded-lg bg-navy px-4 py-2 text-sm font-semibold text-white hover:bg-navyhover disabled:opacity-50"
-            >
-              {row.activeSession ? "Resume hosting" : "Host live"}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => toggleStatus(row)}
+                disabled={busy}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {row.quiz.status === "done" ? "Mark upcoming" : "Mark done"}
+              </button>
+              <button
+                onClick={() => host(row)}
+                disabled={busy}
+                className="rounded-lg bg-navy px-4 py-2 text-sm font-semibold text-white hover:bg-navyhover disabled:opacity-50"
+              >
+                {row.activeSession ? "Resume hosting" : "Host live"}
+              </button>
+            </div>
           </div>
         ))}
         {quizzes.length === 0 && (

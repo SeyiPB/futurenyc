@@ -80,6 +80,7 @@ export interface Quiz {
   speed_bonus: boolean;
   streak_bonus_per_day: number;
   is_active: boolean;
+  status: "upcoming" | "done";
   created_by: string | null;
   created_at: string;
 }
