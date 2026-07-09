@@ -73,7 +73,7 @@ export function Leaderboard({
   );
 
   const podium = rows.slice(0, 3);
-  const rest = rows.slice(3, 10);
+  const rest = rows.slice(3); // everyone below the podium
 
   return (
     <main className={`min-h-screen bg-ink text-white ${display ? "p-6" : "p-4 sm:p-8"}`}>
