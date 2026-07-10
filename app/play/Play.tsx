@@ -14,22 +14,47 @@ export function Play() {
   const [busy, setBusy] = useState(false);
   const [state, setState] = useState<PlayState | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Optimistically-selected option so the tap registers instantly, keyed by
+  // question id so it clears when the facilitator advances.
+  const [pending, setPending] = useState<{ qId: string; optionId: string } | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inFlight = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!code || !pin) return;
-    const s = await getPlayState(code, pin);
-    setState(s);
+    if (!code || !pin || inFlight.current) return; // skip if a poll is already running
+    inFlight.current = true;
+    try {
+      const s = await getPlayState(code, pin);
+      setState(s);
+    } catch {
+      /* transient network hiccup — next tick retries */
+    } finally {
+      inFlight.current = false;
+    }
   }, [code, pin]);
 
+  // Self-scheduling poll with jitter so 25+ devices don't all hit at the same
+  // instant (avoids a thundering-herd spike on each tick).
   useEffect(() => {
     if (!joined) return;
-    refresh();
-    timer.current = setInterval(refresh, 1500); // poll live state
+    let stopped = false;
+    const tick = async () => {
+      await refresh();
+      if (stopped) return;
+      timer.current = setTimeout(tick, 2500 + Math.random() * 1500); // 2.5–4s
+    };
+    tick();
     return () => {
-      if (timer.current) clearInterval(timer.current);
+      stopped = true;
+      if (timer.current) clearTimeout(timer.current);
     };
   }, [joined, refresh]);
+
+  // Drop the optimistic selection once the current question changes.
+  const currentQId = state && state.ok ? state.question?.id ?? null : null;
+  useEffect(() => {
+    if (pending && pending.qId !== currentQId) setPending(null);
+  }, [currentQId, pending]);
 
   async function handleJoin(e: React.FormEvent) {
     e.preventDefault();
@@ -51,15 +76,20 @@ export function Play() {
   }
 
   async function answer(optionId: string, questionId: string) {
+    // Optimistic: lock the choice in the UI immediately, before the round-trip.
+    setPending({ qId: questionId, optionId });
     setSubmitting(true);
     try {
       const res = await submitAnswer(code, pin, questionId, optionId);
-      if (!res.ok) setError(res.error || "Could not submit");
+      if (!res.ok && res.error !== "Already answered") {
+        setError(res.error || "Could not submit");
+        setPending(null); // rollback so they can retry
+      }
     } catch {
       setError("Something went wrong submitting your answer.");
+      setPending(null);
     } finally {
       setSubmitting(false);
-      refresh();
     }
   }
 
@@ -127,7 +157,13 @@ export function Play() {
             <h2 className="mb-6 text-xl font-bold">{state.question.prompt}</h2>
             <div className="grid gap-3">
               {state.options.map((o) => {
-                const isMine = state.myOptionId === o.id;
+                // Treat the optimistic pending choice for THIS question as "mine".
+                const pendingMine =
+                  pending?.qId === state.question!.id && pending.optionId === o.id;
+                const isMine = state.myOptionId === o.id || pendingMine;
+                const hasAnswered =
+                  state.answered ||
+                  (pending?.qId === state.question!.id && pending.optionId != null);
                 const revealed = state.revealed;
                 const correct = "isCorrect" in o ? (o as { isCorrect?: boolean }).isCorrect : undefined;
                 let cls = "bg-white/10 hover:bg-white/20";
@@ -141,7 +177,7 @@ export function Play() {
                 return (
                   <button
                     key={o.id}
-                    disabled={state.answered || revealed || submitting}
+                    disabled={hasAnswered || revealed}
                     onClick={() => answer(o.id, state.question!.id)}
                     className={`rounded-xl px-4 py-4 text-left text-lg font-medium transition disabled:cursor-default ${cls}`}
                   >
@@ -152,7 +188,7 @@ export function Play() {
                 );
               })}
             </div>
-            {state.answered && !state.revealed && (
+            {(state.answered || pending?.qId === state.question.id) && !state.revealed && (
               <p className="mt-5 text-sm text-accent">Answer locked in — waiting for results…</p>
             )}
             {revealedHint(state)}

@@ -13,25 +13,32 @@ function normCode(code: string) {
 async function resolveSessionAndStudent(code: string, pin: string) {
   const supabase = createAdminClient();
 
-  // Look up by code regardless of status so students still see their final
-  // score after the session ends. Individual actions enforce status rules.
-  const { data: session } = await supabase
-    .from("quiz_sessions")
-    .select("*")
-    .eq("join_code", normCode(code))
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (!session) return { ok: false as const, error: "Session not found." };
+  // Session (by code, any status so ended sessions still show a final score)
+  // and student (by PIN) are independent — fetch them concurrently.
+  const [sessionRes, studentRes] = await Promise.all([
+    supabase
+      .from("quiz_sessions")
+      .select("*")
+      .eq("join_code", normCode(code))
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("students")
+      .select("id, name, nickname")
+      .eq("pin", pin.trim())
+      .maybeSingle(),
+  ]);
 
-  const { data: student } = await supabase
-    .from("students")
-    .select("id, name, nickname")
-    .eq("pin", pin.trim())
-    .maybeSingle();
-  if (!student) return { ok: false as const, error: "Invalid PIN." };
+  if (!sessionRes.data) return { ok: false as const, error: "Session not found." };
+  if (!studentRes.data) return { ok: false as const, error: "Invalid PIN." };
 
-  return { ok: true as const, supabase, session, student };
+  return {
+    ok: true as const,
+    supabase,
+    session: sessionRes.data,
+    student: studentRes.data,
+  };
 }
 
 // Join a live session with a join code + personal PIN.
@@ -82,39 +89,35 @@ export async function submitAnswer(
   if (session.current_revealed)
     return { ok: false as const, error: "Answers are closed for this question." };
 
-  const { data: participant } = await supabase
-    .from("quiz_participants")
-    .select("id")
-    .eq("session_id", session.id)
-    .eq("student_id", student.id)
-    .maybeSingle();
+  // Participant lookup and option validation are independent — run concurrently.
+  const [participantRes, optionRes] = await Promise.all([
+    supabase
+      .from("quiz_participants")
+      .select("id")
+      .eq("session_id", session.id)
+      .eq("student_id", student.id)
+      .maybeSingle(),
+    supabase
+      .from("quiz_options")
+      .select("id, is_correct, question_id")
+      .eq("id", optionId)
+      .maybeSingle(),
+  ]);
+
+  const participant = participantRes.data;
+  const option = optionRes.data;
   if (!participant) return { ok: false as const, error: "You haven't joined this session." };
-
-  // Already answered this question? (one answer per question, enforced by DB too)
-  const { data: prior } = await supabase
-    .from("quiz_answers")
-    .select("id")
-    .eq("session_id", session.id)
-    .eq("participant_id", participant.id)
-    .eq("question_id", questionId)
-    .maybeSingle();
-  if (prior) return { ok: false as const, error: "Already answered." };
-
-  // Validate the option belongs to this question and compute correctness server-side.
-  const { data: option } = await supabase
-    .from("quiz_options")
-    .select("id, is_correct, question_id")
-    .eq("id", optionId)
-    .maybeSingle();
   if (!option || option.question_id !== questionId)
     return { ok: false as const, error: "Invalid option." };
 
-  // Server-computed response time (never trust the client) for an optional speed bonus.
+  // Server-computed response time (never trust the client).
   const startedAt = session.current_question_started_at
     ? new Date(session.current_question_started_at).getTime()
     : Date.now();
   const responseMs = Math.max(0, Date.now() - startedAt);
 
+  // One answer per question is enforced by unique(session, participant, question);
+  // rely on that instead of a pre-check query. A conflict means already answered.
   const { error } = await supabase.from("quiz_answers").insert({
     session_id: session.id,
     participant_id: participant.id,
@@ -125,7 +128,12 @@ export async function submitAnswer(
     points_earned: option.is_correct ? 1 : 0,
   });
 
-  if (error) return { ok: false as const, error: error.message };
+  if (error) {
+    // 23505 = unique_violation → they already answered this question.
+    if ((error as { code?: string }).code === "23505")
+      return { ok: false as const, error: "Already answered." };
+    return { ok: false as const, error: error.message };
+  }
   return { ok: true as const };
 }
 
@@ -153,17 +161,10 @@ export async function getPlayState(code: string, pin: string): Promise<PlayState
   if (!res.ok) return { ok: false, error: res.error };
   const { supabase, session, student } = res;
 
-  const { data: participant } = await supabase
-    .from("quiz_participants")
-    .select("id, display_name, total_score")
-    .eq("session_id", session.id)
-    .eq("student_id", student.id)
-    .maybeSingle();
-
   const out: Extract<PlayState, { ok: true }> = {
     ok: true,
     status: session.status,
-    displayName: participant?.display_name || student.name,
+    displayName: student.name,
     lobbyCount: 0,
     revealed: session.current_revealed,
     answered: false,
@@ -176,54 +177,76 @@ export async function getPlayState(code: string, pin: string): Promise<PlayState
   };
 
   if (session.status === "lobby") {
-    const { count } = await supabase
-      .from("quiz_participants")
-      .select("id", { count: "exact", head: true })
-      .eq("session_id", session.id);
-    out.lobbyCount = count ?? 0;
+    // Participant (for display name) + lobby count, concurrently.
+    const [pRes, cRes] = await Promise.all([
+      supabase
+        .from("quiz_participants")
+        .select("display_name")
+        .eq("session_id", session.id)
+        .eq("student_id", student.id)
+        .maybeSingle(),
+      supabase
+        .from("quiz_participants")
+        .select("id", { count: "exact", head: true })
+        .eq("session_id", session.id),
+    ]);
+    out.displayName = pRes.data?.display_name || student.name;
+    out.lobbyCount = cRes.count ?? 0;
     return out;
   }
 
   if (session.status === "ended") {
-    const { data: result } = await supabase
-      .from("quiz_results")
-      .select("best_correct, total_questions, points_awarded")
-      .eq("quiz_id", session.quiz_id)
-      .eq("student_id", student.id)
-      .maybeSingle();
-    out.finalCorrect = result?.best_correct ?? participant?.total_score ?? 0;
-    out.totalQuestions = result?.total_questions ?? 0;
-    out.pointsAwarded = result?.points_awarded ?? 0;
+    const [pRes, rRes] = await Promise.all([
+      supabase
+        .from("quiz_participants")
+        .select("display_name, total_score")
+        .eq("session_id", session.id)
+        .eq("student_id", student.id)
+        .maybeSingle(),
+      supabase
+        .from("quiz_results")
+        .select("best_correct, total_questions, points_awarded")
+        .eq("quiz_id", session.quiz_id)
+        .eq("student_id", student.id)
+        .maybeSingle(),
+    ]);
+    out.displayName = pRes.data?.display_name || student.name;
+    out.finalCorrect = rRes.data?.best_correct ?? pRes.data?.total_score ?? 0;
+    out.totalQuestions = rRes.data?.total_questions ?? 0;
+    out.pointsAwarded = rRes.data?.points_awarded ?? 0;
     return out;
   }
 
-  // Active — current question without is_correct unless revealed.
+  // Active — current question with is_correct STRIPPED unless revealed.
   const qId = session.current_question_id;
   if (!qId) return out;
 
-  const { data: question } = await supabase
-    .from("quiz_questions")
-    .select("id, prompt, question_type, time_limit_seconds")
-    .eq("id", qId)
-    .single();
-
-  const { data: options } = await supabase
-    .from("quiz_options")
-    .select("id, label, position, is_correct")
-    .eq("question_id", qId)
-    .order("position");
-
-  if (participant) {
-    const { data: myAnswer } = await supabase
-      .from("quiz_answers")
-      .select("option_id")
+  // Two concurrent queries, each embedding a child table to avoid extra trips:
+  //   participant + this student's answers, and the question + its options.
+  const [pRes, qRes] = await Promise.all([
+    supabase
+      .from("quiz_participants")
+      .select("display_name, quiz_answers(option_id, question_id)")
       .eq("session_id", session.id)
-      .eq("participant_id", participant.id)
-      .eq("question_id", qId)
-      .maybeSingle();
-    out.myOptionId = myAnswer?.option_id ?? null;
-  }
+      .eq("student_id", student.id)
+      .maybeSingle(),
+    supabase
+      .from("quiz_questions")
+      .select("id, prompt, question_type, time_limit_seconds, quiz_options(id, label, position, is_correct)")
+      .eq("id", qId)
+      .maybeSingle(),
+  ]);
+
+  out.displayName = pRes.data?.display_name || student.name;
+
+  const myAnswers = (pRes.data?.quiz_answers || []) as { option_id: string; question_id: string }[];
+  const mine = myAnswers.find((a) => a.question_id === qId);
+  out.myOptionId = mine?.option_id ?? null;
   out.answered = out.myOptionId !== null;
+
+  const question = qRes.data as
+    | { id: string; prompt: string; question_type: "mc" | "tf"; time_limit_seconds: number; quiz_options: { id: string; label: string; position: number; is_correct: boolean }[] }
+    | null;
 
   out.question = question
     ? {
@@ -234,11 +257,14 @@ export async function getPlayState(code: string, pin: string): Promise<PlayState
       }
     : null;
 
-  out.options = (options || []).map((o: { id: string; label: string; is_correct: boolean }) => ({
-    id: o.id,
-    label: o.label,
-    ...(out.revealed ? { isCorrect: o.is_correct } : {}),
-  }));
+  out.options = (question?.quiz_options || [])
+    .slice()
+    .sort((a, b) => a.position - b.position)
+    .map((o) => ({
+      id: o.id,
+      label: o.label,
+      ...(out.revealed ? { isCorrect: o.is_correct } : {}),
+    }));
 
   return out;
 }

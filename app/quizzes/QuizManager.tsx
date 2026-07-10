@@ -157,7 +157,7 @@ function HostConsole({
 
   useEffect(() => {
     refresh();
-    timer.current = setInterval(refresh, 2000); // poll live state
+    timer.current = setInterval(refresh, 3000); // poll live state
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
