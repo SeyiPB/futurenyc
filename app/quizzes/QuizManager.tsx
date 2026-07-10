@@ -103,7 +103,7 @@ export function QuizManager({ quizzes }: { quizzes: QuizRow[] }) {
               </p>
               <p className="text-xs text-slate-500">
                 {row.questionCount} question{row.questionCount === 1 ? "" : "s"} ·{" "}
-                {row.quiz.points_per_correct} pts each · +{row.quiz.streak_bonus_per_day}/streak day
+                {row.quiz.points_per_correct} pts each
                 {row.activeSession && (
                   <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 font-semibold text-emerald-700">
                     LIVE · {row.activeSession.join_code}
