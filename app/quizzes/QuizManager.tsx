@@ -7,10 +7,12 @@ import {
   cancelSession,
   endSession,
   getHostState,
+  getQuizAnswerKey,
   nextQuestion,
   revealCurrent,
   setQuizStatus,
   startSession,
+  type AnswerKeyQuestion,
 } from "./actions";
 import type { ProgramDay, Quiz } from "@/lib/types";
 
@@ -28,6 +30,21 @@ export function QuizManager({ quizzes }: { quizzes: QuizRow[] }) {
   const [hostSessionId, setHostSessionId] = useState<string | null>(null);
   const [hostQuizTitle, setHostQuizTitle] = useState("");
   const [busy, setBusy] = useState(false);
+  // Answer-key review overlay
+  const [reviewTitle, setReviewTitle] = useState<string | null>(null);
+  const [reviewQs, setReviewQs] = useState<AnswerKeyQuestion[] | null>(null);
+
+  async function viewAnswers(row: QuizRow) {
+    setBusy(true);
+    const res = await getQuizAnswerKey(row.quiz.id);
+    setBusy(false);
+    if (res.ok) {
+      setReviewTitle(`${row.day ? `Day ${row.day.day_number}: ` : ""}${row.quiz.title}`);
+      setReviewQs(res.questions);
+    } else {
+      alert(res.error || "Could not load answers");
+    }
+  }
 
   async function host(row: QuizRow) {
     if (row.questionCount === 0) {
@@ -57,6 +74,59 @@ export function QuizManager({ quizzes }: { quizzes: QuizRow[] }) {
   function closeHost() {
     setHostSessionId(null);
     router.refresh();
+  }
+
+  if (reviewQs) {
+    return (
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold text-navy">Answer key — {reviewTitle}</h1>
+          <button
+            onClick={() => {
+              setReviewQs(null);
+              setReviewTitle(null);
+            }}
+            className="text-sm text-slate-500 hover:text-navy"
+          >
+            ← Back to quizzes
+          </button>
+        </div>
+        <p className="text-sm text-slate-500">
+          The correct answer for each question is highlighted in green.
+        </p>
+        {reviewQs.length === 0 ? (
+          <p className="text-slate-400">This quiz has no questions.</p>
+        ) : (
+          <ol className="space-y-4">
+            {reviewQs.map((q, i) => (
+              <li
+                key={q.id}
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+              >
+                <p className="mb-3 font-semibold text-navy">
+                  {i + 1}. {q.prompt}
+                </p>
+                <ul className="space-y-2">
+                  {q.options.map((o) => (
+                    <li
+                      key={o.id}
+                      className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm ${
+                        o.isCorrect
+                          ? "bg-emerald-50 font-medium text-emerald-800"
+                          : "bg-slate-50 text-slate-600"
+                      }`}
+                    >
+                      <span>{o.isCorrect ? "✅" : "•"}</span>
+                      <span>{o.label}</span>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+    );
   }
 
   if (hostSessionId) {
@@ -112,6 +182,13 @@ export function QuizManager({ quizzes }: { quizzes: QuizRow[] }) {
               </p>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => viewAnswers(row)}
+                disabled={busy || row.questionCount === 0}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+              >
+                View answers
+              </button>
               <button
                 onClick={() => toggleStatus(row)}
                 disabled={busy}

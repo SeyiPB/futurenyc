@@ -15,6 +15,7 @@ import type {
   PointCategory,
   AttendanceStatus,
 } from "@/lib/types";
+import type { QuizReview } from "./page";
 
 interface StudentDetailClientProps {
   student: Student;
@@ -22,6 +23,7 @@ interface StudentDetailClientProps {
   awardsRecords: PointAward[];
   programDays: ProgramDay[];
   categories: PointCategory[];
+  quizReview: QuizReview[];
 }
 
 export function StudentDetailClient({
@@ -30,8 +32,9 @@ export function StudentDetailClient({
   awardsRecords,
   programDays,
   categories,
+  quizReview,
 }: StudentDetailClientProps) {
-  const [activeTab, setActiveTab] = useState<"attendance" | "points">("attendance");
+  const [activeTab, setActiveTab] = useState<"attendance" | "points" | "quizzes">("attendance");
 
   // Modals state
   const [editingAttendance, setEditingAttendance] = useState<{
@@ -277,7 +280,70 @@ export function StudentDetailClient({
           >
             Points History ({awardsRecords.length})
           </button>
+          <button
+            onClick={() => setActiveTab("quizzes")}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all ${
+              activeTab === "quizzes"
+                ? "border-brand text-navy"
+                : "border-transparent text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            Quiz Answers ({quizReview.length})
+          </button>
         </div>
+
+        {/* Tab 3: Quiz Answers */}
+        {activeTab === "quizzes" && (
+          <div className="space-y-4">
+            {quizReview.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-400 shadow-sm">
+                {student.name} hasn&apos;t answered any quiz questions yet.
+              </div>
+            ) : (
+              quizReview.map((qz) => (
+                <div
+                  key={qz.quizId}
+                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                >
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="font-semibold text-navy">
+                      {qz.dayNumber ? `Day ${qz.dayNumber}: ` : ""}
+                      {qz.title}
+                    </h3>
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-sm font-bold ${
+                        qz.correctCount === qz.total
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-slate-100 text-slate-700"
+                      }`}
+                    >
+                      {qz.correctCount}/{qz.total} correct
+                    </span>
+                  </div>
+                  <ol className="space-y-3">
+                    {qz.questions.map((q, i) => (
+                      <li key={i} className="border-t border-slate-100 pt-3 first:border-0 first:pt-0">
+                        <p className="text-sm font-medium text-slate-800">
+                          {i + 1}. {q.prompt}
+                        </p>
+                        <p className="mt-1 text-sm">
+                          <span className={q.correct ? "text-emerald-700" : "text-rose-600"}>
+                            {q.correct ? "✅" : "❌"} Their answer: {q.chosenLabel ?? "—"}
+                          </span>
+                        </p>
+                        {!q.correct && (
+                          <p className="mt-0.5 text-sm text-emerald-700">
+                            ✔ Correct answer: {q.correctLabel}
+                          </p>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              ))
+            )}
+          </div>
+        )}
 
         {/* Tab 1: Attendance Log */}
         {activeTab === "attendance" && (

@@ -13,6 +13,44 @@ async function requireUser() {
   return { supabase, user };
 }
 
+export type AnswerKeyQuestion = {
+  id: string;
+  position: number;
+  prompt: string;
+  options: { id: string; label: string; isCorrect: boolean }[];
+};
+
+// Full answer key for a quiz: every question with its options and the correct
+// one flagged. Facilitator-only (authenticated read).
+export async function getQuizAnswerKey(
+  quizId: string,
+): Promise<{ ok: true; questions: AnswerKeyQuestion[] } | { ok: false; error: string }> {
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase
+    .from("quiz_questions")
+    .select("id, position, prompt, quiz_options(id, label, position, is_correct)")
+    .eq("quiz_id", quizId)
+    .order("position");
+  if (error) return { ok: false, error: error.message };
+
+  const questions: AnswerKeyQuestion[] = (data || []).map((q: {
+    id: string;
+    position: number;
+    prompt: string;
+    quiz_options: { id: string; label: string; position: number; is_correct: boolean }[];
+  }) => ({
+    id: q.id,
+    position: q.position,
+    prompt: q.prompt,
+    options: (q.quiz_options || [])
+      .slice()
+      .sort((a, b) => a.position - b.position)
+      .map((o) => ({ id: o.id, label: o.label, isCorrect: o.is_correct })),
+  }));
+
+  return { ok: true, questions };
+}
+
 // Toggle a quiz's completion status (Done / Upcoming).
 export async function setQuizStatus(quizId: string, status: "upcoming" | "done") {
   const { supabase } = await requireUser();
