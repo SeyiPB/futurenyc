@@ -1,8 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-// Routes that never require auth.
-const PUBLIC_PATHS = ["/login", "/leaderboard", "/play"];
+// Routes that never require auth. The leaderboard is now facilitator-only;
+// only /login and the student quiz-join page (/play) stay public.
+const PUBLIC_PATHS = ["/login", "/play"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PATHS.some(
